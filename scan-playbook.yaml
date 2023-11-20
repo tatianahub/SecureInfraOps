@@ -1,0 +1,99 @@
+- name: Start scan
+  hosts: all
+  vars:
+    token: "{{ token }}" # -e "token=..." when starting ansible-playbook
+    openvas_pass: "{{ lookup('hashi_vault', 'secret=ansible/storage/openvas:password token={{token}} url=http://127.0.0.1:8203') }}"
+    defectdojo_pass: "{{ lookup('hashi_vault', 'secret=ansible/storage/defectdojo:password token={{token}} url=http://127.0.0.1:8203') }}"
+  become: true
+  tasks:
+    - name: Change passwords for OpenVas and Defectfojo
+      block:
+        - name: change password for OpenVas
+          command: "docker compose -f greenbone-community-container/docker-compose.yml -p greenbone-community-edition exec -u gvmd gvmd gvmd --user=admin --new-password={{ openvas_pass }}"
+          when: "'openvas_server' in group_names"
+
+        - name: change password for Defectdojo
+          block:
+            - name: Install pip3
+              apt:
+                name: python3-pip
+
+            - name: Install pexpect using pip
+              pip:
+                name: pexpect
+                executable: pip3  
+
+            - name: Run the changepassword command
+              ansible.builtin.expect:
+                command: "docker exec -it django-defectdojo-uwsgi-1 ./manage.py changepassword admin"
+                responses:
+                  'Password': "{{ defectdojo_pass }}"
+                  'Password (again)': "{{ defectdojo_pass }}"
+                echo: yes
+              args:
+                chdir: /home/ans_user/django-DefectDojo
+          when: "'defectdojo_server' in group_names"
+
+    - name: Save Defectdojo API token and create defectdojo product and engegement
+      block:
+        - name: get API token
+          shell: "curl -X POST -H 'content-type: application/json' http://0.0.0.0:8080/api/v2/api-token-auth/ -d '{\"username\": \"admin\", \"password\": \"{{ defectdojo_pass }}\" }' | awk -F'\"' '{print $4}'"
+          register: defectdojo_token
+
+        - name: Create defectdojo product and engegement
+          block:
+            - name: Generate uuid for naming
+              command: "{{ 'python3 -c \"import uuid; print(uuid.uuid4())\"' }}"
+              register: uuid_result
+
+            - name: Create product and save id
+              shell: "curl -X POST -H 'Content-Type: application/json' -H 'Authorization: Token {{ defectdojo_token.stdout }}' -d '{ \"name\": \"{{ uuid_result.stdout }}\", \"description\": \"test\", \"prod_type\": \"1\" }' http://127.0.0.1:8080/api/v2/products/ | awk -F'[:,]' '{print $2}'"
+              register: id
+              
+            - name: Create engagement with id
+              shell: "curl -X POST -H 'Content-Type: application/json' -H 'Authorization: Token {{ defectdojo_token.stdout }}' -d '{\"name\":\"{{ uuid_result.stdout }}\",\"target_start\": \"2023-11-17\",\"target_end\":\"2023-11-28\",\"product\":\"{{ id.stdout }}\"}' http://127.0.0.1:8080/api/v2/engagements/ "
+          
+        - name: Update data 
+          vars:
+            data:
+              login: "admin"
+              password: "{{ defectdojo_pass }}"
+              apitoken: "{{ defectdojo_token.stdout }}"
+              uuid: "{{ uuid_result.stdout }}"
+          ansible.builtin.debug:
+            msg: "{{ lookup('community.hashi_vault.vault_write', 'ansible/storage/defectdojo/', token=token, url='http://127.0.0.1:8203', data=data) }}"
+
+      when: "'defectdojo_server' in group_names"
+
+    - name: create OpenVAS project ans start scan (can be a lot of errors)
+      block:
+        - name: create target
+          shell: "docker compose -f greenbone-community-container/docker-compose.yml -p greenbone-comminity-edition run gvm-tools gvm-cli --gmp-username admin --gmp-password {{ openvas_pass }} socket --pretty --xml '<create_target><name>MyIP</name><hosts>\"192.168.57.1/24\"</hosts><port_list id=\"4a4717fe-57d2-11e1-9a26-406186ea4fc5\"/></create_target>' | awk -F'\"' '{print $6}'"
+          register: id_target
+          ignore_errors: yes 
+
+        - name: create task
+          shell: "docker compose -f greenbone-community-container/docker-compose.yml -p greenbone-comminity-edition run gvm-tools gvm-cli --gmp-username admin --gmp-password {{ openvas_pass }} socket --pretty --xml '<create_task><name>MyScan</name><config id=\"daba56c8-73ec-11df-a475-002264764cea\"/><target id=\"{{ id_target.stdout }}\"/></create_task>' | awk -F'\"' '{print $6}'"
+          register: id_task
+          ignore_errors: yes 
+
+        - name: start scan
+          shell: "docker compose -f greenbone-community-container/docker-compose.yml -p greenbone-comminity-edition run gvm-tools gvm-cli --gmp-username admin --gmp-password {{ openvas_pass }} socket --pretty --xml '<start_task task_id=\"{{ id_task.stdout }}\"/>' | awk -F'[<>]' '/<report_id>/{print $3}'"
+          register: id_report
+          ignore_errors: yes 
+
+        - name: Pause for 30 minutes
+          pause:
+            minutes: 30
+
+        - name: upload report
+          shell: "docker compose -f greenbone-community-container/docker-compose.yml -p greenbone-comminity-edition run gvm-tools gvm-cli --gmp-username admin --gmp-password {{ openvas_pass }} socket --pretty --xml '<get_reports report_id=\"{{ id_report }}\" format_id=\"c1645568-627a-11e3-a660-406186ea4fc5\"/>' > output.csv "
+          ignore_errors: yes 
+      when: "'openvas_servers' in group_names"    
+
+    - name: send report to the DefectDojo
+      vars:
+        defectdojotoken: "{{ lookup('hashi_vault', 'secret=ansible/storage/defectdojo:apitoken token={{token}} url=http://127.0.0.1:8203') }}"
+        uuid: "{{ lookup('hashi_vault', 'secret=ansible/storage/defectdojo:uuid token={{token}} url=http://127.0.0.1:8203') }}"
+      shell: "curl -X POST -F 'file=@output.csv' -H 'Authorization: Token {{ defectdojotoken }}' -F 'product_name={{ uuid }}' -F 'engagement_name={{ uuid }}' -F 'scan_type=OpenVAS CSV' -F 'active=true' -F 'verified=true' http://192.168.57.42:8080/api/v2/import-scan/"
+      when: "'openvas_server' in group_names"

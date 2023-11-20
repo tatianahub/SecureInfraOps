@@ -1,0 +1,24 @@
+- name: Check if DefectDojo repository is already cloned
+  stat:
+    path: "/home/ans_user/django-DefectDojo"
+  register: defectdojo_repo
+
+- name: Clone DefectDojo repository if not already cloned
+  command: "git clone https://github.com/DefectDojo/django-DefectDojo"
+  when: not defectdojo_repo.stat.exists
+
+- name: build images from script
+  command: "./dc-build.sh"
+  args:
+    chdir: /home/ans_user/django-DefectDojo
+
+- name: change configurations
+  lineinfile:
+    path: "/home/ans_user/django-DefectDojo/dc-up.sh"
+    regexp: ".*\n?"
+    line: "docker compose --profile $PROFILE --env-file ./docker/environments/$PROFILE.env up --no-deps -d"
+
+- name: defectdojo up
+  command: "./dc-up.sh postgres-redis"
+  args:
+    chdir: /home/ans_user/django-DefectDojo

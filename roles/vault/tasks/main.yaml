@@ -1,0 +1,72 @@
+- name: Install WireGuard
+  apt:
+    name: 
+      - wireguard
+      - resolvconf
+    state: present
+
+- name: Copy WireGuard config
+  copy:
+    src: wg0.conf 
+    dest: /etc/wireguard/wg0.conf
+
+- name: Start WireGuard interface
+  command: wg-quick up wg0
+  ignore_errors: true
+
+- name: Add HashiCorp GPG key
+  shell: "curl -fsSL https://apt.releases.hashicorp.com/gpg | sudo apt-key add -"
+
+- name: Add HashiCorp repository
+  shell: echo "deb [arch=amd64] https://apt.releases.hashicorp.com $(lsb_release -cs) main" > /etc/apt/sources.list.d/hashicorp.list
+
+- name: Update apt cache
+  apt:
+    update_cache: yes
+
+- name: Install HashiCorp Vault
+  apt:
+    name: vault
+    state: present
+
+- name: HTTP listener in vault.hcl
+  replace:
+    path: /etc/vault.d/vault.hcl
+    regexp: '^# HTTP listener'
+    replace: 'listener "tcp" {\n  address = "0.0.0.0:8201"\n  tls_disable = 1\n}'
+
+- name: Ensure Vault service is started
+  systemd:
+    name: vault
+    state: started
+
+
+# Next we need manual configuration of VAULT
+
+# export VAULT_ADDR=http://0.0.0.0:8201
+# vault operator init - save 5 keys and 1 token
+# vault operator unseal - use 3 key
+# vault login - use 1 token
+# vault secrets enable -path=ansible/storage kv - create storage
+# vault kv put ansible/storage/defectdojo login=admin password=YOUR_PASSWORD token=null - add your credentials for defectdojo
+# vault kv put ansible/storage/openvas login=admin password=YOUR_PASSWORD - add your credentials for openvas
+
+# vault policy write my-policy - << EOF 
+# path "ansible/storage/*" {           
+# capabilities = ["read","list","create","update"]
+# }                                               
+# EOF
+
+# vault token create -policy=my-policy - create your special token for ansible if you want or use root token(not save)
+
+# after that start ansible-playbook:
+# ansible-playbook scan-playbook.yaml -i hosts -D -e "token=ansible_token"
+
+
+
+
+
+
+
+
+

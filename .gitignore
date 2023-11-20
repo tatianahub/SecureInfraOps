@@ -1,0 +1,28 @@
+# IntelliJ IDEA
+.idea/
+
+# User-specific files
+*.iml
+*.iws
+*.iwd
+
+# CMake
+cmake-build-*/
+
+# External tool builders
+.ideaExternalTools/
+
+# JAR files
+*.jar
+
+# Java
+*.class
+
+# Gradle
+build/
+
+# Kotlin
+*.kotlin_caches/
+
+# Misc
+*.DS_Store

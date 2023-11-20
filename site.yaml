@@ -1,0 +1,28 @@
+- name: Install docker and high hardening
+  become: true
+  hosts: all  
+  gather_facts: true 
+  roles:
+    - docker
+    - hardening
+
+- name: Install Vault
+  become: true
+  hosts: vault_server
+  gather_facts: true 
+  roles:
+    - vault 
+
+- name: Install openvas
+  become: true
+  hosts: openvas_server  
+  gather_facts: true 
+  roles:
+    - openvas
+
+- name: Install defectdojo
+  become: true
+  hosts: defectdojo_server  
+  gather_facts: true 
+  roles:
+    - defectdojo 

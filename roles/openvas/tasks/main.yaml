@@ -1,0 +1,19 @@
+- name: make directory
+  file:
+    name: greenbone-community-container
+    state: directory
+
+- name: download docker-compose.yaml
+  shell: "curl -f -L https://greenbone.github.io/docs/latest/_static/docker-compose-22.4.yml -o greenbone-community-container/docker-compose.yml"
+
+- name: change configurations
+  lineinfile:
+    path: "/home/ans_user/greenbone-community-container/docker-compose.yml"
+    regexp: "^      - 127.0.0.1:9392:80"
+    line: "      - 9392:80"
+
+- name: pull docker images
+  command: "docker compose -f greenbone-community-container/docker-compose.yml -p greenbone-community-edition pull"
+
+- name: up docker-compose
+  command: "docker compose -f greenbone-community-container/docker-compose.yml -p greenbone-community-edition up -d"

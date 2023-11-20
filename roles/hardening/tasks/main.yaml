@@ -1,0 +1,244 @@
+- name: hardening for all servers (high impact)
+  block:
+    - name: Set password hashing algorithm in /etc/login.defs
+      lineinfile: 
+        path: /etc/login.defs 
+        regexp: "^ENCRYPT_METHOD"
+        line: ENCRYPT_METHOD SHA512
+        create: yes 
+
+    - name: Disable Ctrl-Alt-Del Reboot Activation
+      file:
+        src: /dev/null
+        dest: /etc/systemd/system/ctrl-alt-del.target
+        state: link 
+
+    - name: Disable Ctrl-Alt-Del Burst Action
+      lineinfile:
+        path: /etc/systemd/system.conf
+        regexp: "^#CtrlAltDelBurstAction"  
+        line: "CtrlAltDelBurstAction=none"
+        create: yes  
+
+    - name: Check if the file exists
+      stat:
+        path: /etc/pam.d/system-auth
+      register: system_auth_file
+
+    - name: Replace content if file exists
+      replace:
+        path: /etc/pam.d/system-auth
+        regexp: "nullok"
+      when: system_auth_file.stat.exists
+
+    - name: Ensure Software Patches Installed (CCE-80865-9)
+      apt:
+        name: '*'
+        state: latest
+
+    - name: Install policycoreutils Package (CCE-82976-2)
+      apt:
+        name: policycoreutils
+        state: present
+
+    - name: Uninstall Packages (CCE-82432-6, CCE-82436-7, CCE-82182-7, CCE-82184-3, CCE-82414-4)
+      apt:
+        name: 
+          - ypserv
+          - tftp-server
+          - telnet-server
+          - rsh-server
+          - vsftpd
+        state: absent
+        autoremove: true
+
+    - name: Install audispd-plugins Package (CCE-82953-1)
+      apt:
+        name: audispd-plugins
+        state: present
+
+    - name: Disable tftp Service (CCE-82435-9)
+      block:
+        - name: Check if TFTP service file exists
+          stat:
+            path: /usr/lib/systemd/system/tftp.service
+          register: tftp_service_file
+
+        - name: Disable TFTP service if the service file exists
+          systemd:
+            name: tftp
+            enabled: no
+            state: stopped
+          when: tftp_service_file.stat.exists == true
+
+    - name: Disable telnet Service (CCE-80887-3)
+      block:
+        - name: Check if file telnet exists
+          stat:
+            path: /etc/xinetd.d/telnet
+          register: telnet
+
+        - name: telnet service configuration
+          lineinfile:
+            path: /etc/xinetd.d/telnet
+            regexp: "^disable"
+            line: "disable = yes"
+          when: telnet == true  
+
+        - name: disable rexec.socket
+          systemd:
+            name: rexec.socket
+            state: stopped
+          when: telnet == true   
+
+    - name: Disable rlogin Service (CCE-80885-7)
+      block:
+        - name: Check if file rlogin exists
+          stat:
+            path: /etc/xinetd.d/rlogin
+          register: rlogin
+
+        - name: rlogin service configuration
+          lineinfile:
+            path: /etc/xinetd.d/rlogin
+            regexp: "^disable"
+            line: "disable = yes"
+          when: rlogin == true  
+
+        - name: disable rlogin.socket
+          systemd:
+            name: rlogin.socket
+            state: stopped
+          when: rlogin == true  
+
+    - name: Disable rsh Service (CCE-82431-8)
+      block:
+        - name: Check if file rsh exists
+          stat:
+            path: /etc/xinetd.d/rsh
+          register: rsh
+
+        - name: rsh service configuration
+          lineinfile:
+            path: /etc/xinetd.d/rsh
+            regexp: "^disable"
+            line: "disable = yes"
+          when: rsh == true  
+
+        - name: disable rsh.socket
+          systemd:
+            name: rsh.socket
+            state: stopped
+          when: rsh == true   
+
+    - name: Disable rexec Service (CCE-80884-0)   
+      block:
+        - name: Check if file rexec exists
+          stat:
+            path: /etc/xinetd.d/rexec
+          register: rexec
+
+        - name: rexec service configuration
+          lineinfile:
+            path: /etc/xinetd.d/rexec
+            regexp: "^disable"
+            line: "disable = yes"
+          when: rexec == true  
+
+        - name: disable rexec.socket
+          systemd:
+            name: rexec.socket
+            state: stopped
+          when: rexec == true   
+
+    - name: Enable Kernel Page-Table Isolation (KPTI) (CCE-82194-2)
+      block:
+        - name: Get GRUB_CMDLINE_LINUX settings
+          shell: grep GRUB_CMDLINE_LINUX /etc/default/grub | cut -f2 -d'"' 
+          changed_when: false
+          register: grub_cmdline_linux
+
+        - name: Add pti=on to GRUB_CMDLINE_LINUX
+          lineinfile:
+            path: /etc/default/grub
+            regexp: '^GRUB_CMDLINE_LINUX='
+            line: 'GRUB_CMDLINE_LINUX="{{ grub_cmdline_linux.stdout }} pti=on"'
+            state: present
+          when: "'pti=on' not in grub_cmdline_linux.stdout"
+          
+
+- name: hardening for all servers (medium impact)
+  block:
+    - name: Verify /boot/grub2/grub.cfg Permissions (CCE-80783-4)
+      stat:
+        path: /boot/grub2/grub.cfg
+      register: grub_cfg_stat
+
+    - name: Set /boot/grub2/grub.cfg Permissions if exists
+      file:
+        path: /boot/grub2/grub.cfg
+        owner: root
+        group: root
+        mode: '0600'
+      when: grub_cfg_stat.stat.exists
+
+    - name: Ensure Home Directories are Created for New Users (CCE-83789-8)
+      lineinfile:
+        path: /etc/login.defs
+        regexp: "^CREATE_HOME"
+        line: CREATE_HOME yes
+        create: yes 
+
+    - name: Set Account Expiration Following Inactivity (CCE-80954-1)
+      lineinfile: 
+        path: /etc/default/useradd
+        regexp: "^INACTIVE"
+        line: INACTIVE=35
+        create: yes
+
+    - name: Set Password Minimum Length in login.defs (CCE-80652-1)
+      lineinfile:
+        path: /etc/default/useradd
+        regexp: '^PASS_MIN_LEN='
+        line: 'PASS_MIN_LEN=16'
+        create: yes
+
+    - name: Modify the System Message of the Day Banner (CCE-83496-0)
+      copy:
+        content: ai-ai-ai
+        dest: /etc/motd
+
+    - name: Disallow kernel profiling by unprivileged users (CCE-81054-9)
+      lineinfile:
+        path: /etc/sysctl.conf
+        line: "kernel.perf_event_paranoid=2"
+
+    - name: Disable vsyscalls (CCE-80946-7)
+      block:
+        - name: Get GRUB_CMDLINE_LINUX settings
+          shell: grep GRUB_CMDLINE_LINUX /etc/default/grub | cut -f2 -d'"'
+          changed_when: false 
+          register: grub_cmdline_linux
+
+        - name: Add vsyscall=none to GRUB_CMDLINE_LINUX
+          lineinfile:
+            path: /etc/default/grub
+            regexp: '^GRUB_CMDLINE_LINUX='
+            line: 'GRUB_CMDLINE_LINUX="{{ grub_cmdline_linux.stdout }} vsyscall=none"'
+            state: present
+          when: "'vsyscall=none' not in grub_cmdline_linux.stdout"
+
+    - name: Disable Kernel Image Loading (CCE-80952-5)
+      lineinfile:
+        path: /etc/sysctl.conf
+        line: "kernel.kexec_load_disabled = 1"
+
+    - name: Harden the operation of the BPF just-in-time compiler (CCE-82934-1)
+      lineinfile:
+        path: /etc/sysctl.conf
+        line: "net.core.bpf_jit_harden = 2"
+
+    - name: Restrict Access to Kernel Message Buffer (CCE-80953-3)
+      lineinfile:
+        path: /etc/sysctl.conf
+        line: "kernel.dmesg_restrict = 1"
