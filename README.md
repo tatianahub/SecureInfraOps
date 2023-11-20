@@ -4,7 +4,7 @@ Deploy **OpenVAS** on hardened Debian server into a virtual machine with **Vagra
 Aggregate scan results findings in **DefectDojo**. <br/>
 Store all secrets in **Vault**.
 
-![](image/image0.png)
+![](images/image0.png)
 
 ### 1. Vagrant stage
 
@@ -52,7 +52,7 @@ Ansible tasks in more detail:
 
 * **Install Docker and Apply High Hardening:**
 
-This task, executed on ![](image/image1.png)all hosts, installs Docker and applies security hardening measures.
+This task, executed on all hosts, installs Docker and applies security hardening measures.
 
 * **Install Vault**
 
@@ -63,7 +63,7 @@ Executed on hosts designated as "vault_server," this task installs HashiCorp Vau
 This task, executed on hosts designated as "openvas_server," installs and configures OpenVAS for vulnerability scanning.
 
 Warning!
-I waited for over 2 hours during the loading of scanning configurations. If you encounter the "The SCAP database is required" error, please refer to this [forum post](https://forum.greenbone.net/t/missing-scan-configuration/12296) for assistance.
+I waited for over 2 hours during the loading of scanning configurations. If you encounter the "The SCAP database is required" error, please refer to this [troubleshooting post](https://greenbone.github.io/docs/latest/22.4/source-build/troubleshooting.html#failed-to-find-scan-configuration) for assistance.
 
 * **Install DefectDojo**
 
@@ -103,5 +103,6 @@ Start OpenVAS scan and send report to the DefectDojo:
 ### 5. Checking the results in DefectDojo stage
 
 Go to the http://127.0.0.1:8082 and check:
-![](image/image1.png)
+
+![](images/image1.png)
 
