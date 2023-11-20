@@ -20,7 +20,7 @@ Vagrant.configure("2") do |config|
       n.vm.network "forwarded_port", guest: 8080, host: "#{8080+machine_id}", id: "https" # defectdogo debug port for host
       n.vm.box = "debian/bullseye64"
       n.vm.provision :shell, path: "add_ans_user.sh"
-      config.disksize.size = '30GB' # vagrant plugin install vagrant-disksize on thr host, and sudo resize2fs -p -F /dev/sda1 on the machine_1
+      config.disksize.size = '30GB' # vagrant plugin install vagrant-disksize on the host, and sudo resize2fs -p -F /dev/sda1 on the machine_1
     end
   end
 end
